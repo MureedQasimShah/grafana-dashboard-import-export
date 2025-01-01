@@ -13,6 +13,52 @@ check_python_package() {
     fi
 }
 
+# Function to import dashboards with error handling
+import_dashboards() {
+    local dir_path=$1
+    
+    # Check if directory exists and contains JSON files
+    if [[ ! -d "$dir_path" ]]; then
+        echo "Error: Directory '$dir_path' does not exist!"
+        exit 1
+    fi
+    
+    # Check if directory contains JSON files
+    if ! find "$dir_path" -name "*.json" -print -quit | grep -q .; then
+        echo "Error: No JSON files found in '$dir_path'!"
+        exit 1
+    fi
+    
+    echo "Importing dashboards from directory: $dir_path"
+    for json_file in "$dir_path"/*.json; do
+        echo "Processing: $json_file"
+        grafana-import import -i "$json_file" || {
+            echo "Error importing $json_file"
+            continue
+        }
+    done
+}
+
+# Function to export dashboards with error handling
+export_dashboards() {
+    local export_dir="exported_dashboards"
+    
+    # Create export directory if it doesn't exist
+    mkdir -p "$export_dir"
+    
+    echo "Exporting dashboards to directory: $export_dir"
+    
+    # Export each dashboard type to its own subdirectory
+    for dashboard in "ArgoCD" "CoreDNS"; do
+        mkdir -p "$export_dir/$dashboard"
+        echo "Exporting $dashboard dashboards..."
+        grafana-import export --pretty -d "$export_dir/$dashboard" || {
+            echo "Error exporting $dashboard dashboards"
+            continue
+        }
+    done
+}
+
 # Check if grafana-import is installed
 echo "Checking if 'grafana-import' is installed..."
 if check_python_package "grafana_import"; then
@@ -32,25 +78,18 @@ echo "1. Import dashboards"
 echo "2. Export dashboards"
 read -p "Enter your choice (1 or 2): " choice
 
-if [[ "$choice" -eq 1 ]]; then
-    # Import dashboards
-    read -p "Enter the directory path containing dashboards to import: " dir_path
-
-    if [[ -d "$dir_path" ]]; then
-        echo "Importing dashboards from directory: $dir_path"
-        grafana-import import -i "$dir_path"
-        echo "Dashboards imported successfully!"
-    else
-        echo "Error: Directory '$dir_path' does not exist!"
+case "$choice" in
+    1)
+        read -p "Enter the directory path containing dashboards to import: " dir_path
+        import_dashboards "$dir_path"
+        echo "Dashboard import process completed!"
+        ;;
+    2)
+        export_dashboards
+        echo "Dashboard export process completed!"
+        ;;
+    *)
+        echo "Invalid choice. Exiting."
         exit 1
-    fi
-elif [[ "$choice" -eq 2 ]]; then
-    cd "exported_dashboard"
-    echo "Exporting dashboards to directory: exported_dashboard"
-    grafana-import export --pretty -d "ArgoCD"
-    grafana-import export --pretty -d "CoreDNS"
-    echo "Dashboards exported successfully to exported_dashboard directory!"
-else
-    echo "Invalid choice. Exiting."
-    exit 1
-fi
+        ;;
+esac
